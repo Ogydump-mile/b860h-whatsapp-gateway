@@ -215,11 +215,54 @@ npm ci --silent
 npm run db:generate
 npm run db:deploy
 # Build (tsc --noEmit && tsup) adalah proses SEKALI PAKAI saat install, beban RAM-nya lepas
-# begitu selesai — beri heap lebih lega khusus untuk langkah ini saja (tidak memengaruhi cap
-# runtime di systemd unit, yang tetap ${NODE_HEAP_MB}MB). Kalau board tetap OOM di langkah ini
-# (lihat README.md bagian "yang belum diverifikasi"), build-kan di mesin lain dengan arsitektur
-# sama (aarch64) lalu salin folder dist/ + node_modules/ ke board ini.
+# begitu selesai — TAPI beri heap lewat NODE_OPTIONS/--max-old-space-size TIDAK melindungi
+# esbuild (dipanggil tsup): esbuild adalah binary Go, proses terpisah di luar V8 heap Node,
+# jadi flag itu cuma membatasi proses tsc/tsup sendiri. Diverifikasi di hardware: esbuild bisa
+# butuh RSS ~470MB sendirian untuk codebase ini, dan di board 784MB RAM itu sering melebihi
+# apa yang disisakan zram — kernel OOM-kill esbuild (bukan error yang jelas, muncul sebagai
+# "Error: The service was stopped" dari tsup).
+# Mitigasi dua lapis, keduanya SEMENTARA dan dibersihkan lagi segera setelah build selesai
+# (baik sukses maupun gagal, lewat trap) — proyek ini tetap pakai zram untuk operasional
+# normal, bukan swap disk permanen (lihat b860h-stb-hardening-kit soal alasan menghindarinya):
+#   1. Matikan Postgres sejenak — build sama sekali tidak menyentuh DB (db:generate/db:deploy
+#      di atas sudah selesai), jadi ini RAM gratis tanpa risiko.
+#   2. Swapfile sementara di disk, HANYA kalau ruang disk cukup — kalau tidak cukup, lanjut
+#      tanpa swapfile (pre-flight RAM check awal paling tidak sudah memastikan free memory
+#      minimal ${MIN_FREE_MB}MB, jadi board tidak diinstal dari kondisi yang sudah mepet).
+BUILD_SWAPFILE=/var/tmp/evolution-build.swap
+BUILD_SWAPFILE_ACTIVE=0
+cleanup_build_swap() {
+  if [ "${BUILD_SWAPFILE_ACTIVE}" = "1" ]; then
+    swapoff "${BUILD_SWAPFILE}" 2>/dev/null || true
+    rm -f "${BUILD_SWAPFILE}"
+    BUILD_SWAPFILE_ACTIVE=0
+  fi
+  systemctl start postgresql 2>/dev/null || true
+}
+trap cleanup_build_swap EXIT
+systemctl stop postgresql
+
+AVAIL_DISK_MB=$(df --output=avail -m /var/tmp 2>/dev/null | tail -1 | tr -d ' ')
+if [ "${AVAIL_DISK_MB:-0}" -ge 1700 ]; then
+  echo "Swapfile sementara 1536MB untuk langkah build ini saja (dihapus lagi setelah selesai)..."
+  if fallocate -l 1536M "${BUILD_SWAPFILE}" 2>/dev/null || dd if=/dev/zero of="${BUILD_SWAPFILE}" bs=1M count=1536 status=none; then
+    chmod 600 "${BUILD_SWAPFILE}"
+    mkswap "${BUILD_SWAPFILE}" >/dev/null
+    swapon "${BUILD_SWAPFILE}"
+    BUILD_SWAPFILE_ACTIVE=1
+  else
+    echo "WARNING: gagal membuat swapfile sementara, lanjut tanpa swap tambahan." >&2
+  fi
+else
+  echo "WARNING: ruang disk /var/tmp cuma ${AVAIL_DISK_MB:-0}MB (perlu >=1700MB), lewati swapfile sementara." >&2
+  echo "  Kalau build tetap OOM: lihat README.md bagian build di mesin lain (aarch64) lalu" >&2
+  echo "  salin folder dist/ + node_modules/ hasilnya ke board ini." >&2
+fi
+
 NODE_OPTIONS=--max-old-space-size=512 npm run build
+
+cleanup_build_swap
+trap - EXIT
 
 # Buang devDependencies (typescript, tsup, eslint, husky, dll — 27 paket, cuma dipakai
 # saat build, nol guna saat runtime). Mengecilkan footprint disk & apa yang ada di

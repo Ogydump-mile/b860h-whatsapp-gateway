@@ -126,14 +126,27 @@ Kalau `MemoryCurrent` konsisten jauh dari estimasi, atau unit sering restart kar
 pindah ke host lain — bukan menaikkan `MemoryMax` begitu saja (itu cuma memindah risiko ke
 RAM board, bukan menghilangkannya).
 
-**Risiko lain yang belum tervalidasi di hardware asli: langkah build saat instalasi.**
-`npm run build` (`tsc --noEmit && tsup`) adalah proses sekali-pakai, tapi TypeScript
-typecheck dikenal bisa butuh beberapa ratus MB RAM sesaat untuk codebase sebesar Evolution
-API. Script sudah memberi heap lebih lega khusus langkah ini (`--max-old-space-size=512`,
-tidak memengaruhi cap runtime), tapi kalau board tetap OOM di langkah ini: build di mesin
-lain berarsitektur sama (aarch64) — misalnya Raspberry Pi atau VM aarch64 mana saja dengan
-RAM lebih besar — lalu `rsync` folder `dist/` dan `node_modules/` hasilnya ke `/opt/evolution-api/`
-di STB. Runtime (`node dist/main.js`) jauh lebih ringan daripada proses build-nya.
+**Update, terverifikasi langsung di hardware: langkah build saat instalasi memang OOM di
+percobaan pertama.** Bukan `tsc` (typecheck lolos tanpa masalah), tapi `esbuild` yang
+dipanggil `tsup` — kernel log mengonfirmasi `esbuild` kena OOM-kill dengan RSS **~470MB**
+sendirian, di board 784MB RAM. `NODE_OPTIONS=--max-old-space-size` yang dipasang sebelumnya
+ternyata tidak melindungi langkah ini: esbuild adalah binary Go, proses terpisah di luar V8
+heap Node, jadi flag itu cuma membatasi proses `tsc`/`tsup` sendiri, bukan `esbuild`.
+
+Mitigasi sekarang sudah masuk ke `install-evolution-native.sh` (bagian `5/7`) secara otomatis:
+Postgres dimatikan sejenak selama build (build sama sekali tidak menyentuh DB), dan sebuah
+swapfile **sementara** (1.5GB, di `/var/tmp`, dihapus lagi lewat `trap` begitu build selesai
+atau gagal) dipasang khusus untuk langkah ini saja — kalau ruang disk tidak cukup, script
+lanjut tanpa swapfile dan cuma mencetak peringatan. Ini satu-satunya titik di seluruh proyek
+yang menyentuh swap disk; di luar langkah build, zram tetap satu-satunya swap yang aktif,
+sesuai alasan di [`b860h-stb-hardening-kit`](https://github.com/Ogydump-mile/b860h-stb-hardening-kit)
+untuk menghindari swap disk permanen (wear pada eMMC/SD).
+
+Kalau board tetap OOM di langkah ini walau swapfile sudah aktif (board dengan RAM lebih kecil
+dari 784MB, atau tidak ada ruang disk cukup untuk swapfile): build di mesin lain berarsitektur
+sama (aarch64) — misalnya Raspberry Pi atau VM aarch64 mana saja dengan RAM lebih besar — lalu
+`rsync` folder `dist/` dan `node_modules/` hasilnya ke `/opt/evolution-api/` di STB. Runtime
+(`node dist/main.js`) jauh lebih ringan daripada proses build-nya.
 
 ## Keamanan jaringan (relevan untuk profil FortiGate Anda)
 
