@@ -27,11 +27,6 @@
 #    cgroup-local) yang melebihi guardrail #2.
 # Tujuannya satu: kalaupun WA gateway ini crash karena kehabisan RAM, jalur manajemen
 # SSH/AP STB TIDAK BOLEH ikut kena. Itu prioritas yang tidak bisa dikompromikan di board ini.
-#
-# YANG SENGAJA TIDAK DIKERJAKAN SCRIPT INI (baca README.md modul ini untuk alasan lengkap):
-# - OmniRoute (AI model router) dan Hermes Agent TIDAK dipasang di unit ini. Diukur dari data
-#   publik, OmniRoute sendiri idle ~541MB RAM — lebih besar dari sisa RAM bebas di board ini
-#   SEBELUM stack WA gateway ini pun ditambahkan. Lihat README.md untuk rekomendasi lokasi.
 set -euo pipefail
 
 [ "$(id -u)" -eq 0 ] || { echo "Jalankan sebagai root (sudo)."; exit 1; }

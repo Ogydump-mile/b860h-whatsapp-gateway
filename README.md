@@ -66,38 +66,6 @@ lanjut langkah sesudahnya di script (`npm prune`, systemd unit, proteksi OOM).
 | Docker atau native? | **Native** (bukan container) | Docker daemon+containerd sendiri ~60-100MB RAM idle sebelum satu container pun jalan. Upstream Evolution API punya jalur native resmi (`local_install.sh`) — bukan hack. |
 | Redis? | **Dimatikan**, pakai `CACHE_LOCAL_ENABLED=true` | Fallback in-process ini resmi ada di kode (`src/cache/` punya Redis + Node-cache). Verified langsung dari `.env.example` tag `2.3.7`, bukan tebakan. |
 | Database? | Postgres **native**, tuning RAM minimal | Prisma schema Evolution API cuma punya `postgresql-schema.prisma` dan `mysql-schema.prisma` — tidak ada opsi SQLite. Postgres tidak bisa dihindari, tapi bisa ditekan ke ~32MB `shared_buffers`. |
-| OmniRoute & Hermes Agent? | **Tidak di unit ini** | Lihat bagian di bawah — ini bukan soal males, ini aritmatika RAM. |
-
-## Kenapa OmniRoute dan Hermes Agent tidak ikut dipasang di sini
-
-Diukur dari data publik yang bisa diverifikasi (bukan asumsi):
-
-| Komponen | Stack | RAM idle terukur/diperkirakan |
-|---|---|---|
-| **OmniRoute** (`diegosouzapw/omniroute`) | Node.js + Next.js 16 + SQLite | **~541MB** idle, diukur langsung oleh reviewer pihak ketiga ([pinggy.io](https://pinggy.io/blog/omniroute_ai_gateway_security/)) |
-| **Hermes Agent** (`nousresearch/hermes-agent`) | Docker Compose + Traefik (reverse proxy publik + Let's Encrypt) | Tidak ada angka minimum resmi, tapi arsitekturnya **mengasumsikan domain publik + port 80/443 terbuka ke internet** ([docs.vultr.com](https://docs.vultr.com/how-to-deploy-hermes-agent-open-source-self-hosted-ai-agent)) |
-| **Evolution API** (modul ini) | Native Node + Postgres tuned | Target realistis ~150-250MB idle single-instance (lihat perhitungan di bawah) |
-
-Board ini **total 1GB RAM**, dan dari audit
-[`03-hardening/README.md`](https://github.com/Ogydump-mile/b860h-stb-hardening-kit/blob/main/03-hardening/README.md)
-di repo hardening kit, baseline OS (SSH, AP hostapd/dnsmasq, NetworkManager, journald, dll —
-bahkan setelah di-trim) sudah memakai ~784MB, menyisakan kira-kira 200-300MB bebas.
-**OmniRoute sendirian (541MB) sudah lebih besar dari total RAM bebas itu** — sebelum WhatsApp
-gateway atau Hermes ditambahkan sama sekali. Ini bukan masalah tuning, ini kapasitas fisik
-yang tidak ada.
-
-Hermes Agent punya masalah berbeda, bukan cuma RAM: desainnya **menaruh reverse proxy publik
-dengan TLS otomatis** di depan agent-nya. STB ini dirancang sebagai AP manajemen **offline/
-internal-only** (lihat README [`b860h-stb-hardening-kit`](https://github.com/Ogydump-mile/b860h-stb-hardening-kit) —
-`wlandrct` terpisah total dari jalur internet).
-Memasang ingress publik di box yang sama berarti mengubah total model ancamannya — itu
-keputusan arsitektur network tersendiri, bukan sesuatu yang harus (atau sebaiknya) disisipkan
-diam-diam lewat instalasi WA gateway.
-
-**Rekomendasi:** jalankan OmniRoute dan Hermes Agent di host terpisah (VPS kecil 2GB+ pun
-cukup untuk keduanya). STB ini bisa tetap jadi *client* yang memanggil OmniRoute/Hermes lewat
-API dari jaringan manajemennya — itu cuma trafik keluar biasa, tidak butuh resource lokal
-berarti di STB.
 
 ## Perhitungan RAM Evolution API di board ini
 
