@@ -110,21 +110,32 @@ langsung pakai `--force` — cek dulu kenapa RAM sudah mepet sebelum menambah be
 API key dicetak di akhir instalasi dan tersimpan di `/opt/evolution-api/.env` (root-only,
 `chmod 600`). Dipakai di header `apikey` untuk semua request ke API.
 
-## Yang belum diverifikasi di hardware asli
+## Verifikasi di hardware asli
 
-Saya tidak punya akses SSH langsung ke STB ini dari sesi ini — jadi angka RAM idle Evolution
-API di atas adalah **estimasi berdasarkan arsitektur stack**, bukan hasil pengukuran langsung
-di board ini. Setelah jalan beberapa hari, cek realita sebenarnya:
+Instalasi lengkap sudah dijalankan dan diverifikasi langsung di unit produksi pertama
+(`./check.sh`: 14/14 OK, 0 FAIL). Hasil ukur sebenarnya langsung setelah start, dibandingkan
+estimasi di atas:
+
+| Item | Estimasi | Hasil ukur nyata |
+|---|---|---|
+| RAM `evolution-api` (`MemoryCurrent`) | 120-200MB | **~159MB** — tepat di kisaran estimasi |
+| `MemoryMax` cgroup terpasang | 384M, bukan `infinity` | **Terkonfirmasi** (`402653184` bytes) |
+| RAM available board setelah semua aktif | ~200-300MB bebas | **430MB** |
+| Isolasi OOM SSH/AP/dnsmasq/NetworkManager | `OOMScoreAdjust=-900` | **Terkonfirmasi aktif** di keempatnya |
+| API liveness (loopback + apikey) | — | **HTTP 200** |
+
+Ini angka di titik start, bukan di bawah beban produksi beberapa hari. Pantau terus setelah
+jalan beberapa hari untuk realita di bawah pemakaian sebenarnya:
 
 ```bash
-systemctl show evolution-api -p MemoryCurrent --value   # bandingkan dengan estimasi 120-200MB
+systemctl show evolution-api -p MemoryCurrent --value   # bandingkan dengan ~159MB di atas
 journalctl -u evolution-api --since "7 days ago" | grep -i "oom\|killed\|restart" # cek seberapa sering guardrail kepakai
 ```
 
-Kalau `MemoryCurrent` konsisten jauh dari estimasi, atau unit sering restart karena hit
-`MemoryMax`, itu sinyal nyata untuk menurunkan jumlah instance WA atau mempertimbangkan
-pindah ke host lain — bukan menaikkan `MemoryMax` begitu saja (itu cuma memindah risiko ke
-RAM board, bukan menghilangkannya).
+Kalau `MemoryCurrent` naik jauh dari ~159MB atau unit sering restart karena hit `MemoryMax`,
+itu sinyal nyata untuk menurunkan jumlah instance WA atau mempertimbangkan pindah ke host
+lain — bukan menaikkan `MemoryMax` begitu saja (itu cuma memindah risiko ke RAM board, bukan
+menghilangkannya).
 
 **Update, terverifikasi langsung di hardware: langkah build saat instalasi memang OOM di
 percobaan pertama.** Bukan `tsc` (typecheck lolos tanpa masalah), tapi `esbuild` yang
