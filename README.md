@@ -142,11 +142,22 @@ yang menyentuh swap disk; di luar langkah build, zram tetap satu-satunya swap ya
 sesuai alasan di [`b860h-stb-hardening-kit`](https://github.com/Ogydump-mile/b860h-stb-hardening-kit)
 untuk menghindari swap disk permanen (wear pada eMMC/SD).
 
-Kalau board tetap OOM di langkah ini walau swapfile sudah aktif (board dengan RAM lebih kecil
-dari 784MB, atau tidak ada ruang disk cukup untuk swapfile): build di mesin lain berarsitektur
-sama (aarch64) — misalnya Raspberry Pi atau VM aarch64 mana saja dengan RAM lebih besar — lalu
-`rsync` folder `dist/` dan `node_modules/` hasilnya ke `/opt/evolution-api/` di STB. Runtime
-(`node dist/main.js`) jauh lebih ringan daripada proses build-nya.
+**Peringatan jujur soal swapfile ini: kapasitas cukup tidak berarti cepat.** eMMC/SD di board
+kelas ini punya random I/O yang jauh lebih lambat dari RAM, dan pola akses memori bundler
+seperti esbuild sangat acak (bukan sekuensial). Kalau build kelihatan "diam" lama setelah log
+`CJS/ESM Build start` tanpa pesan error maupun pesan sukses, itu bisa berarti proses masih
+hidup tapi *thrashing* — nyaris tidak maju karena menunggu I/O disk, bukan menunggu CPU. Cek
+dari terminal lain (jangan interupsi build yang berjalan): `ps aux | grep esbuild` (proses
+masih ada?) dan `vmstat 1 5` (kolom `si`/`so` tinggi + `wa` tinggi + `us`/`sy` rendah =
+thrashing, bukan hang). Kalau itu terjadi, swapfile disk bukan jalan keluar yang layak untuk
+board itu — lanjut ke opsi berikut, jangan tunggu tanpa batas waktu.
+
+Kalau board tetap OOM di langkah ini walau swapfile sudah aktif, atau swapfile membuat build
+thrashing tanpa maju (board dengan RAM lebih kecil dari 784MB, storage lambat, atau tidak ada
+ruang disk cukup untuk swapfile): build di mesin lain berarsitektur sama (aarch64) — misalnya
+Raspberry Pi atau VM aarch64 mana saja dengan RAM lebih besar — lalu `rsync` folder `dist/` dan
+`node_modules/` hasilnya ke `/opt/evolution-api/` di STB. Runtime (`node dist/main.js`) jauh
+lebih ringan daripada proses build-nya.
 
 ## Keamanan jaringan (relevan untuk profil FortiGate Anda)
 
