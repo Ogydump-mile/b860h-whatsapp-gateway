@@ -96,8 +96,25 @@ if ! command -v psql >/dev/null; then
 fi
 systemctl enable --now postgresql
 
-PG_VERSION=$(ls /etc/postgresql/ 2>/dev/null | sort -V | tail -1)
-[ -n "$PG_VERSION" ] || { echo "Tidak ketemu /etc/postgresql/<versi>/ — install Postgres gagal?"; exit 1; }
+PG_VERSION=$(pg_lsclusters --no-header 2>/dev/null | awk '{print $1}' | sort -V | tail -1 || true)
+if [ -z "$PG_VERSION" ]; then
+  PG_VERSION=$(ls /etc/postgresql/ 2>/dev/null | sort -V | tail -1 || true)
+fi
+if [ -z "$PG_VERSION" ]; then
+  echo "!! Tidak ketemu cluster Postgres aktif. Diagnostik:" >&2
+  echo "--- pg_lsclusters ---" >&2
+  pg_lsclusters >&2 2>&1 || echo "(pg_lsclusters gagal/tidak ada)" >&2
+  echo "--- ls -la /etc/postgresql/ ---" >&2
+  ls -la /etc/postgresql/ >&2 2>&1 || echo "(/etc/postgresql/ tidak ada)" >&2
+  echo "--- dpkg -l | grep postgresql ---" >&2
+  dpkg -l | grep postgresql >&2 2>&1 || true
+  echo "--- systemctl status postgresql ---" >&2
+  systemctl status postgresql --no-pager >&2 2>&1 || true
+  echo "Kemungkinan: paket postgresql ter-install tapi default cluster gagal dibuat otomatis." >&2
+  echo "Coba manual: pg_createcluster <versi> main --start, lalu jalankan ulang script ini." >&2
+  exit 1
+fi
+echo "  -> Pakai cluster Postgres versi: ${PG_VERSION}"
 PG_CONF_DIR="/etc/postgresql/${PG_VERSION}/main"
 PG_CONFD="${PG_CONF_DIR}/conf.d"
 mkdir -p "$PG_CONFD"
