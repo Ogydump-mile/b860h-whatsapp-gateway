@@ -221,6 +221,11 @@ npm run db:deploy
 # sama (aarch64) lalu salin folder dist/ + node_modules/ ke board ini.
 NODE_OPTIONS=--max-old-space-size=512 npm run build
 
+# Buang devDependencies (typescript, tsup, eslint, husky, dll — 27 paket, cuma dipakai
+# saat build, nol guna saat runtime). Mengecilkan footprint disk & apa yang ada di
+# node_modules yang bisa ikut ter-cache di RAM.
+npm prune --omit=dev
+
 chown -R "${APP_USER}:${APP_USER}" "$APP_DIR"
 
 echo
