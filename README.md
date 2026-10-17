@@ -142,22 +142,41 @@ yang menyentuh swap disk; di luar langkah build, zram tetap satu-satunya swap ya
 sesuai alasan di [`b860h-stb-hardening-kit`](https://github.com/Ogydump-mile/b860h-stb-hardening-kit)
 untuk menghindari swap disk permanen (wear pada eMMC/SD).
 
-**Peringatan jujur soal swapfile ini: kapasitas cukup tidak berarti cepat.** eMMC/SD di board
-kelas ini punya random I/O yang jauh lebih lambat dari RAM, dan pola akses memori bundler
-seperti esbuild sangat acak (bukan sekuensial). Kalau build kelihatan "diam" lama setelah log
-`CJS/ESM Build start` tanpa pesan error maupun pesan sukses, itu bisa berarti proses masih
-hidup tapi *thrashing* — nyaris tidak maju karena menunggu I/O disk, bukan menunggu CPU. Cek
-dari terminal lain (jangan interupsi build yang berjalan): `ps aux | grep esbuild` (proses
-masih ada?) dan `vmstat 1 5` (kolom `si`/`so` tinggi + `wa` tinggi + `us`/`sy` rendah =
-thrashing, bukan hang). Kalau itu terjadi, swapfile disk bukan jalan keluar yang layak untuk
-board itu — lanjut ke opsi berikut, jangan tunggu tanpa batas waktu.
+**Update kedua, juga terverifikasi langsung di hardware: swapfile mengatasi OOM, tapi malah
+thrashing.** Di percobaan berikutnya, `esbuild` tidak lagi di-kill — tapi juga nyaris tidak
+maju. `ps aux` menunjukkan proses esbuild di state `Dl+` (uninterruptible sleep, nunggu I/O),
+cuma pakai ~13% CPU setelah 5 menit jalan. `vmstat` menunjukkan `wa` (iowait) 21-74% sementara
+`us`+`sy` (kerja CPU sungguhan) cuma 1-6%, dan `swpd` terus naik — `free -m` mencatat swap
+terpakai sampai 1.25GB dari 1.9GB total (zram 392MB + swapfile 1.5GB). Jadi kebutuhan memori
+build ini ternyata lebih besar dari ~470MB yang tercatat di percobaan OOM pertama (itu cuma
+titik potong saat kernel membunuhnya, bukan puncak aslinya), dan eMMC/SD board ini terlalu
+lambat untuk pola akses acak bundler seperti esbuild dalam volume segitu — swapfile disk
+menukar "crash cepat" jadi "lambat tanpa batas jelas", bukan solusi yang layak dipakai di board
+ini. Kalau mengalami ini: cek `ps aux | grep esbuild` (state `D`/`Dl` = nunggu I/O) dan
+`vmstat 1 5` (`wa` tinggi + `us`/`sy` rendah = thrashing, bukan hang) dari terminal lain, lalu
+langsung ke opsi berikut — jangan tunggu tanpa batas waktu.
 
-Kalau board tetap OOM di langkah ini walau swapfile sudah aktif, atau swapfile membuat build
-thrashing tanpa maju (board dengan RAM lebih kecil dari 784MB, storage lambat, atau tidak ada
-ruang disk cukup untuk swapfile): build di mesin lain berarsitektur sama (aarch64) — misalnya
-Raspberry Pi atau VM aarch64 mana saja dengan RAM lebih besar — lalu `rsync` folder `dist/` dan
-`node_modules/` hasilnya ke `/opt/evolution-api/` di STB. Runtime (`node dist/main.js`) jauh
-lebih ringan daripada proses build-nya.
+**Opsi yang benar-benar menyelesaikannya: build `dist/` di luar STB, arsitektur APA SAJA.**
+Sempat didokumentasikan di sini sebagai "harus mesin aarch64 lain" — ternyata lebih longgar
+dari itu. Output `tsup` (folder `dist/`) adalah JavaScript hasil transpile biasa, sepenuhnya
+portable, tidak terikat arsitektur CPU pembuatnya. Yang terikat arsitektur cuma binary native
+di `node_modules` (prisma query engine, `@esbuild/*`) — dan itu **tidak perlu disalin**, karena
+STB sudah punya `node_modules` yang benar dari `npm ci` pertamanya (lengkap dengan native
+binding aarch64), tidak disentuh sama sekali oleh langkah ini. Jadi build `dist/`-nya bisa di
+laptop/PC apa saja (x86_64 Windows/Mac/Linux biasa), asal internetnya normal (`prisma generate`
+butuh download engine binary dari `binaries.prisma.sh`, tidak butuh koneksi ke Postgres):
+
+```bash
+git clone --depth 1 --branch 2.3.7 https://github.com/EvolutionAPI/evolution-api.git evo-build
+cd evo-build && npm ci && npm run db:generate && npm run build
+tar -czf dist.tar.gz dist
+scp dist.tar.gz root@<ip-stb>:/opt/evolution-api/
+```
+
+Di STB: `cd /opt/evolution-api && rm -rf dist && tar -xzf dist.tar.gz && rm dist.tar.gz`, lalu
+lanjut `npm prune --omit=dev` dan langkah-langkah sesudahnya di `install-evolution-native.sh`
+(systemd unit, proteksi OOM). Runtime (`node dist/main.js`) jauh lebih ringan daripada proses
+build-nya.
 
 ## Keamanan jaringan (relevan untuk profil FortiGate Anda)
 
