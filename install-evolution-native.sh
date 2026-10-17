@@ -138,7 +138,7 @@ systemctl restart postgresql
 DB_PASS_FILE="${APP_DIR}/.db_password"
 if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" | grep -q 1; then
   mkdir -p "$APP_DIR"
-  DB_PASS=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)
+  DB_PASS=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24 || true)
   sudo -u postgres psql -c "CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASS}';"
   sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};"
   echo "$DB_PASS" > "$DB_PASS_FILE"
@@ -173,7 +173,7 @@ else
 fi
 cd "$APP_DIR"
 
-AUTH_KEY=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)
+AUTH_KEY=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32 || true)
 cat > "${APP_DIR}/.env" <<EOF
 SERVER_NAME=evolution
 SERVER_TYPE=http
