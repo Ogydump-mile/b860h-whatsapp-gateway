@@ -10,6 +10,48 @@ supaya dua hal ini bisa berubah/di-versioning independen satu sama lain.
 Ini jawaban atas tantangan "bisa gak WA gateway jalan di STB RAM 1GB": **bisa, dan ini cara
 kerjanya** — dengan catatan jujur soal apa yang masuk ke sini dan apa yang sengaja tidak.
 
+## Ringkasan cepat (buat recall, kalau lupa konteksnya)
+
+**Status unit pertama:** terpasang dan jalan, `./check.sh` 14/14 OK. Build normal di STB
+sempat gagal dua kali (OOM lalu thrashing swap — lihat "Yang pernah gagal" di bawah), jadi
+`dist/` unit ini dibuat manual di Mac lalu disalin ke STB lewat `scp`. Instalasi berikutnya
+lewat `install-evolution-native.sh` biasa (sudah dipatch) seharusnya tidak perlu langkah
+manual ini lagi, kecuali board juga terlalu lemah untuk `esbuild`.
+
+**Path-path penting di STB:**
+
+| Apa | Lokasi |
+|---|---|
+| Source + build Evolution API | `/opt/evolution-api/` |
+| **API key** (root-only, `chmod 600`, TIDAK ada di GitHub) | `/opt/evolution-api/.env` → variabel `AUTHENTICATION_API_KEY` |
+| Hasil build (`dist/main.js`, dipakai `systemd`) | `/opt/evolution-api/dist/` |
+| Systemd unit service | `/etc/systemd/system/evolution-api.service` |
+| Script installer + dokumen ini | `~/b860h-whatsapp-gateway/` (repo ini) |
+| Script verifikasi | `~/b860h-whatsapp-gateway/check.sh` |
+
+**Cek status kapan saja:**
+```bash
+cd ~/b860h-whatsapp-gateway && ./check.sh
+```
+Kalau semua `[OK]`, gateway sehat. Kalau ada `[FAIL]`, itu yang perlu ditindaklanjuti dulu.
+
+**Pakai API-nya** (header `apikey`, nilainya di `.env` seperti tabel di atas):
+```bash
+curl http://127.0.0.1:8080/instance/fetchInstances -H "apikey: <isi dari .env>"
+```
+
+**Yang TIDAK ada di repo GitHub ini** (sengaja): source Evolution API-nya sendiri (di-clone
+fresh dari upstream tiap install, lihat `REPO_URL` di script), `node_modules/`, `dist/` hasil
+build, dan API key. Repo ini cuma berisi *cara* memasang, bukan hasil pasangannya.
+
+**Yang pernah gagal saat instalasi unit pertama** (detail lengkap di bagian "Verifikasi di
+hardware asli" dan "Update ... terverifikasi langsung di hardware" di bawah): build `npm run
+build` kena OOM-kill (`esbuild` butuh RAM lebih dari yang tersisa di board), lalu percobaan
+mitigasi pakai swapfile sementara malah jadi thrashing (lambat tanpa batas, bukan error) karena
+storage board terlalu lambat untuk pola akses acak bundler. Jalan keluarnya: build `dist/` di
+komputer lain (arsitektur apa saja, cukup internet normal), salin ke STB lewat `scp`, baru
+lanjut langkah sesudahnya di script (`npm prune`, systemd unit, proteksi OOM).
+
 ## Prasyarat
 
 - STB sudah menjalani `01-wifi-driver-dtb` + `02-ap-setup` + `03-hardening` dari
